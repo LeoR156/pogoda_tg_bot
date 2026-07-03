@@ -1,0 +1,72 @@
+---
+- name: Запуск 3 экземпляров ботов погоды
+  hosts: tg_bot_3x
+  become: true
+
+  tasks:
+    - name: "Установка пакетов"
+      apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Скачивание официального GPG-ключа Docker
+      get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: 'a+r'
+
+    - name: Добавление репозитория Docker-а
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable"
+        state: present
+        filename: docker
+
+    - name: Установка пакетов
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+          - nginx
+          - htop
+          - git
+          - python3-docker
+        state: present
+        update_cache: true
+
+    - name: Проверка запуска служб
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - docker
+        - nginx
+
+#    - name: Установка библиотеки docker для python
+#     pip:
+#        name: docker
+#        state: present
+
+    - name: Скачивание образа из докер хаба
+      community.docker.docker_image:
+        name: leor156/pogoda-api-tgbot
+        tag: v2
+        source: pull
+
+    - name: Запускаем Docker контейнеры с ботами
+      community.docker.docker_container:
+        name: weather_bot
+        image: leor156/pogoda-api-tgbot:v2
+        state: started
+        recreate: true
+        restart_policy: always
+        env:
+          TG_TOKEN: "{{ tg_token }}"
+          WEATHER_API_KEY: "{{ api_pogoda }}"
+          ADMIN_ID: "{{ admin | string }}"

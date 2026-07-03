@@ -1,0 +1,7 @@
+bot_database.db
+.git
+.gitignore
+__pycache__/
+venv/
+.env
+Dockerfile
