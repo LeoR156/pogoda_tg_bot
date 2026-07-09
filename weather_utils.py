@@ -1,5 +1,6 @@
 # weather_utils.py
 
+
 def get_weather_comment(temperature):
     """Возвращает текстовый комментарий и эмодзи в зависимости от температуры"""
     if temperature >= 25:

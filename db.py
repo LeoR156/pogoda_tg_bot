@@ -14,22 +14,22 @@ DB_NAME = os.getenv("DB_NAME", "postgres")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASS = os.getenv("DB_PASS", "")
 
+
 @contextmanager
 def get_db_connection():
     # Используем RealDictCursor, чтобы код в tg.py мог обращаться к полям как к словарю: user['default_city']
-    conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASS,
-        cursor_factory=RealDictCursor
-    )
+    conn = psycopg2.connect(host=DB_HOST,
+                            port=DB_PORT,
+                            dbname=DB_NAME,
+                            user=DB_USER,
+                            password=DB_PASS,
+                            cursor_factory=RealDictCursor)
     try:
         yield conn
     finally:
         conn.commit()
         conn.close()
+
 
 def init_db():
     try:
@@ -51,11 +51,14 @@ def init_db():
         # Если база обязательна для запуска, можно сделать raise e, чтобы бот не стартовал впустую
         raise e
 
+
 def get_user(telegram_id):
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute('SELECT * FROM users WHERE telegram_id = %s', (telegram_id,))
+            cursor.execute('SELECT * FROM users WHERE telegram_id = %s',
+                           (telegram_id, ))
             return cursor.fetchone()
+
 
 def add_user(telegram_id, username):
     with get_db_connection() as conn:
@@ -64,18 +67,18 @@ def add_user(telegram_id, username):
                 # В PostgreSQL синтаксис избегания дубликатов - ON CONFLICT DO NOTHING
                 cursor.execute(
                     'INSERT INTO users (telegram_id, username) VALUES (%s, %s) ON CONFLICT (telegram_id) DO NOTHING',
-                    (telegram_id, username)
-                )
+                    (telegram_id, username))
             except Exception as e:
                 logger.error(f"Ошибка при добавлении пользователя: {e}")
+
 
 def update_default_city(telegram_id, city):
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
                 'UPDATE users SET default_city = %s WHERE telegram_id = %s',
-                (city, telegram_id)
-            )
+                (city, telegram_id))
+
 
 def get_users_count():
     with get_db_connection() as conn:
