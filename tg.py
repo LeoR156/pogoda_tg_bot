@@ -1,6 +1,8 @@
 import os
+import time
 import telebot
 import logging
+from flask import Flask, request, abort
 
 import db
 import keyboards as kb
@@ -17,16 +19,29 @@ logger = logging.getLogger(__name__)
 TG_TOKEN = os.getenv("TG_TOKEN")
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 ADMIN_ID = os.getenv("ADMIN_ID")
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")  # e.g., https://my-bot.com
+WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", 8080))
 
 if not TG_TOKEN or not WEATHER_API_KEY:
     logger.error("Не заданы переменные окружения TG_TOKEN или WEATHER_API_KEY!")
     exit(1)
+
+if not WEBHOOK_HOST:
+    logger.error("Не задана переменная WEBHOOK_HOST! (например: https://mydomain.com)")
+    exit(1)
+
+# Формируем URL вебхука (скрываем токен в пути для безопасности)
+WEBHOOK_PATH = f"/{TG_TOKEN}/"
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 # Инициализация БД
 db.init_db()
 
 # Инициализация бота
 bot = telebot.TeleBot(TG_TOKEN)
+
+# Инициализация Flask приложения
+app = Flask(__name__)
 
 def get_user_city(user_id):
     user = db.get_user(user_id)
@@ -62,9 +77,6 @@ def admin_stats(message):
     if ADMIN_ID and str(message.from_user.id) == str(ADMIN_ID):
         count = db.get_users_count()
         bot.send_message(message.chat.id, f"📊 Уникальных пользователей в базе: {count}")
-    else:
-        # Игнорируем или выдаем сообщение о недостатке прав
-        pass
 
 @bot.message_handler(func=lambda message: message.text == "Настройки")
 def settings_menu(message):
@@ -91,7 +103,6 @@ def process_city_input(message):
         return
         
     city = message.text.strip()
-    # Делаем проверочный запрос к API
     weather_data = wa.get_current_weather(city)
     
     if weather_data["success"]:
@@ -176,7 +187,6 @@ def weather_requests(message):
 
 @bot.message_handler(func=lambda message: True)
 def unknown_text(message):
-    # Если введен какой-то произвольный текст, предполагаем, что юзер хочет узнать погоду для этого города (разово)
     city = message.text.strip()
     bot.send_chat_action(message.chat.id, 'typing')
     
@@ -189,9 +199,27 @@ def unknown_text(message):
     else:
         bot.send_message(message.chat.id, f"❌ {data['error']}\nИспользуйте меню или введите корректное название города.", reply_markup=kb.get_main_menu())
 
+
+# --- ВЕБХУКИ (Flask) ---
+
+@app.route(WEBHOOK_PATH, methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    else:
+        abort(403)
+
 if __name__ == "__main__":
-    logger.info("Бот запущен и ждет сообщений...")
-    try:
-        bot.polling(none_stop=True)
-    except Exception as e:
-        logger.error(f"Критическая ошибка при поллинге: {e}")
+    logger.info("Удаляем старый вебхук...")
+    bot.remove_webhook()
+    time.sleep(1)
+    
+    logger.info(f"Устанавливаем новый вебхук: {WEBHOOK_URL}")
+    bot.set_webhook(url=WEBHOOK_URL)
+    
+    logger.info(f"Flask сервер запущен на порту {WEBHOOK_PORT}")
+    # Для продакшена лучше использовать Gunicorn, но для Docker часто достаточно и встроенного (или Waitress)
+    app.run(host='0.0.0.0', port=WEBHOOK_PORT)
