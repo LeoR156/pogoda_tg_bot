@@ -29,9 +29,9 @@ jobs:
       - name: Display results
         run: echo '${{ steps.noir.outputs.endpoints }}' | jq .
 
-  build-and-push: 
+  build-and-push:
     name: Build and push to Docker Hub
-    needs: [security-scan, formatting-check] 
+    needs: [security-scan, formatting-check]
     runs-on: ubuntu-latest
     steps:
       - name: Скачиваем код бота
@@ -43,9 +43,36 @@ jobs:
           username: ${{ secrets.docker_login }}
           password: ${{ secrets.docker_pass }}
 
-      - name: Сборка и пуш Docker образа 
+      - name: Сборка и пуш Docker образа
         uses: docker/build-push-action@v6
         with:
-          context: . 
+          context: .
           push: true
           tags: leor156/pogoda-api-tgbot:latest
+
+
+  deploy:
+    name: Deploy to VPS via SSH
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Подключение по SSH и обновление контейнера
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            docker pull leor156/pogoda-api-tgbot:latest
+
+            docker stop weather_bot || true
+            docker rm weather_bot || true
+
+            docker run -d \
+              --name weather_bot \
+              --restart unless-stopped \
+              -e TG_TOKEN="${{ secrets.TG_TOKEN }}" \
+              -e WEATHER_API_KEY="${{ secrets.WEATHER_API_KEY }}" \
+              leor156/pogoda-api-tgbot:latest
+
+            docker image prune -f
